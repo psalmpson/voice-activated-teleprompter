@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react"
+import { useEffect, useRef, useState } from "react"
 import { escape } from "html-escaper"
 import { useAppDispatch, useAppSelector } from "../../app/hooks"
 import { setContent, setFinalTranscriptIndex, setInterimTranscriptIndex } from "./contentSlice"
@@ -33,6 +33,9 @@ export const Content = () => {
   const finalTranscriptIndex = useAppSelector(selectFinalTranscriptIndex)
   const interimTranscriptIndex = useAppSelector(selectInterimTranscriptIndex)
 
+  const [isPlaying, setIsPlaying] = useState(false)
+  const recognitionRef = useRef<any>(null)
+
   const style = {
     fontSize: `${fontSize}px`,
     padding: `0 ${margin}px`,
@@ -56,6 +59,65 @@ export const Content = () => {
       }
     }
   })
+
+  useEffect(() => {
+    if (!recognitionRef.current) {
+      recognitionRef.current = new (window as any).webkitSpeechRecognition()
+      recognitionRef.current.continuous = true
+      recognitionRef.current.interimResults = true
+
+      recognitionRef.current.onresult = (event: any) => {
+        let interimTranscript = ''
+        let finalTranscript = ''
+
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          if (event.results[i].isFinal) {
+            finalTranscript += event.results[i][0].transcript
+          } else {
+            interimTranscript += event.results[i][0].transcript
+          }
+        }
+
+        // Update the transcript in the state
+        dispatch(setContent(finalTranscript + interimTranscript))
+      }
+
+      recognitionRef.current.onerror = (event: any) => {
+        console.error('Speech recognition error:', event.error)
+      }
+    }
+
+    return () => {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop()
+      }
+    }
+  }, [dispatch])
+
+  useEffect(() => {
+    if (!isPlaying) return
+
+    const handleRestart = () => {
+      if (isPlaying && recognitionRef.current) {
+        recognitionRef.current.start()
+      }
+    }
+
+    recognitionRef.current.addEventListener('end', handleRestart)
+
+    return () => {
+      recognitionRef.current.removeEventListener('end', handleRestart)
+    }
+  }, [isPlaying])
+
+  const handlePlayPause = () => {
+    if (!isPlaying) {
+      recognitionRef.current.start()
+    } else {
+      recognitionRef.current.stop()
+    }
+    setIsPlaying(!isPlaying)
+  }
 
   return (
     <main className="content-area">
@@ -107,6 +169,9 @@ export const Content = () => {
           })}
         </div>
       )}
+      <button onClick={handlePlayPause}>
+        {isPlaying ? "Stop Listening" : "Start Listening"}
+      </button>
     </main>
   )
 }
